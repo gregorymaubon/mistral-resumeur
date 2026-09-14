@@ -2,6 +2,20 @@
 
 Toutes les modifications notables apportées à ce projet seront documentées dans ce fichier.
 
+## [1.3.0] - 2026-09-14
+
+### Ajouts
+- **Sélection de la langue du résumé** : Ajout d'une option permettant de générer les résumés en Français (🇫🇷) ou en Anglais (🇬🇧), avec le Français sélectionné par défaut.
+- **Prompts bilingues modulaires** : Définition de deux templates de prompt distincts (`PROMPT_TEMPLATE_FR` et `PROMPT_TEMPLATE_EN`) dans la configuration (`config.js` et `config.sample.js`).
+- **Persistance des préférences** : Sauvegarde automatique du choix de langue de l'utilisateur dans le stockage local de l'extension (`chrome.storage.local`).
+
+### Améliorations
+- **Prompt système adapté** : Envoi d'un message système en anglais ou en français selon la langue sélectionnée pour garantir la cohérence des réponses.
+- **Gestion du cache multilingue** : Calcul des hashes SHA-256 basé sur le prompt final, permettant de conserver en cache les résumés en français et en anglais d'un même texte sans conflit.
+- **Design & Layout** : Intégration du sélecteur de langue dans un composant `.top-bar` épuré au niveau du header.
+
+---
+
 ## [1.2.0] - 2026-05-26
 
 ### Ajouts

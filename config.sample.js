@@ -1,4 +1,4 @@
-﻿/**
+/**
  * FICHIER DE CONFIG – USAGE PERSO (clé visible côté client)
  * ---------------------------------------------------------
  * Copie ce fichier en "config.js", ajoute ta clé Mistral et adapte si besoin.
@@ -29,10 +29,9 @@ window.MISTRAL_CONFIG = {
     TEMPERATURE: 0.3,
 
     /**
-     * Template du prompt. "__TEXT__" sera remplacé par la sélection.
-     * Consigne : 1 seul paragraphe, FR, 3–5 phrases, sans puces ni titres.
+     * Templates de prompt (FR & EN). "__TEXT__" sera remplacé par la sélection.
      */
-    PROMPT_TEMPLATE: [
+    PROMPT_TEMPLATE_FR: [
         "Tu es un assistant concis.",
         "Consigne : Résume le texte ci-dessous en UN SEUL paragraphe en français (3 à 5 phrases),",
         "clair, fidèle et synthétique, sans puces, sans titres, sans ajout d’informations externes.",
@@ -40,6 +39,19 @@ window.MISTRAL_CONFIG = {
         "Texte :",
         "__TEXT__"
     ].join("\n"),
+
+    PROMPT_TEMPLATE_EN: [
+        "You are a concise assistant.",
+        "Instruction: Summarize the text below in ONE SINGLE paragraph in English (3 to 5 sentences),",
+        "clear, faithful, and concise, without bullet points, titles, or adding external information.",
+        "",
+        "Text:",
+        "__TEXT__"
+    ].join("\n"),
+
+    get PROMPT_TEMPLATE() {
+        return this.PROMPT_TEMPLATE_FR;
+    },
 
     /**
      * URL d’appel :

@@ -19,15 +19,25 @@ const mainSection = $("mainSection");
 const historySection = $("historySection");
 const historyList = $("historyList");
 const statusEl = $("status");
+const langSelectEl = $("langSelect");
 
 // ---- Lecture de la configuration globale (injectée par config.js) -----------
 const CFG = (window && window.MISTRAL_CONFIG) || {};
 const API_KEY = CFG.API_KEY;
 const MODEL = CFG.MODEL || "mistral-small-3.1";
 const TEMPERATURE = typeof CFG.TEMPERATURE === "number" ? CFG.TEMPERATURE : 0.3;
-const PROMPT_TEMPLATE = CFG.PROMPT_TEMPLATE || "__TEXT__";
+const PROMPT_TEMPLATE_FR = CFG.PROMPT_TEMPLATE_FR || CFG.PROMPT_TEMPLATE || "__TEXT__";
+const PROMPT_TEMPLATE_EN = CFG.PROMPT_TEMPLATE_EN || CFG.PROMPT_TEMPLATE || "__TEXT__";
 const MAX_CHARS = Number(CFG.MAX_CHARS || 0);
 const API_URL = CFG.API_URL || "https://api.mistral.ai/v1/chat/completions";
+
+/**
+ * Récupère la langue sélectionnée enregistrée (par défaut: "fr").
+ */
+async function getTargetLanguage() {
+    const res = await chrome.storage.local.get("targetLanguage");
+    return res.targetLanguage || "fr";
+}
 
 // ---- Petit contrôle : clé renseignée en mode direct -------------------------
 if (!API_KEY || API_KEY.includes("VOTRE_CLE_API_MISTRAL_ICI")) {
@@ -78,10 +88,11 @@ async function hashText(text) {
 /**
  * Construit le prompt à partir du template. Tronque si MAX_CHARS > 0.
  */
-function buildPromptFromTemplate(rawText) {
+function buildPromptFromTemplate(rawText, lang = "fr") {
     const text = (rawText || "").toString();
     const sliced = MAX_CHARS > 0 ? text.slice(0, MAX_CHARS) : text;
-    return PROMPT_TEMPLATE.replace("__TEXT__", sliced);
+    const template = lang === "en" ? PROMPT_TEMPLATE_EN : PROMPT_TEMPLATE_FR;
+    return template.replace("__TEXT__", sliced);
 }
 
 /**
@@ -109,11 +120,15 @@ function displayUsage(usage) {
 /**
  * Tentative d'appel vers l'API de Mistral avec support du streaming.
  */
-async function callMistralDirectAttempt(prompt, onChunk, includeUsage) {
+async function callMistralDirectAttempt(prompt, lang, onChunk, includeUsage) {
+    const systemContent = lang === "en"
+        ? "You are a concise assistant who summarizes accurately."
+        : "Tu es un assistant concis qui résume fidèlement.";
+
     const body = {
         model: MODEL,
         messages: [
-            { role: "system", content: "Tu es un assistant concis qui résume fidèlement." },
+            { role: "system", content: systemContent },
             { role: "user", content: prompt }
         ],
         temperature: TEMPERATURE,
@@ -177,14 +192,14 @@ async function callMistralDirectAttempt(prompt, onChunk, includeUsage) {
 /**
  * Appel avec gestion du repli automatique sans stream_options.
  */
-async function callMistralDirect(prompt, onChunk) {
+async function callMistralDirect(prompt, lang, onChunk) {
     try {
-        return await callMistralDirectAttempt(prompt, onChunk, true);
+        return await callMistralDirectAttempt(prompt, lang, onChunk, true);
     } catch (e) {
         const errorMsg = e.message || "";
         if (errorMsg.includes("422") || errorMsg.includes("400") || errorMsg.includes("stream_options")) {
             console.warn("stream_options non supporté par l'API, nouvel essai sans cette option...", e);
-            const res = await callMistralDirectAttempt(prompt, onChunk, false);
+            const res = await callMistralDirectAttempt(prompt, lang, onChunk, false);
             const promptWords = prompt.trim().split(/\s+/).length;
             const completionWords = res.text.split(/\s+/).length;
             const promptTokens = Math.round(promptWords * 1.3);
@@ -218,8 +233,10 @@ async function runSummarizeFlow(auto = false) {
             return;
         }
 
+        const currentLang = langSelectEl ? langSelectEl.value : await getTargetLanguage();
+
         // Construction du prompt
-        const prompt = buildPromptFromTemplate(sel.trim());
+        const prompt = buildPromptFromTemplate(sel.trim(), currentLang);
         const cacheKey = await hashText(prompt);
 
         // Vérification du cache
@@ -243,7 +260,7 @@ async function runSummarizeFlow(auto = false) {
         statusEl.textContent = "Appel à Mistral…";
         outputEl.hidden = false;
         
-        const result = await callMistralDirect(prompt, (chunk) => {
+        const result = await callMistralDirect(prompt, currentLang, (chunk) => {
             outputEl.textContent = chunk;
             statusEl.textContent = "Génération en cours…";
         });
@@ -386,5 +403,18 @@ $("copy").addEventListener("click", async () => {
     }
 });
 
-// ---- Autostart à l'ouverture du popup --------------------------------------
-document.addEventListener("DOMContentLoaded", () => runSummarizeFlow(true));
+// ---- Autostart & Initialisation de la langue -------------------------------
+document.addEventListener("DOMContentLoaded", async () => {
+    if (langSelectEl) {
+        const savedLang = await getTargetLanguage();
+        langSelectEl.value = savedLang;
+
+        langSelectEl.addEventListener("change", async () => {
+            const newLang = langSelectEl.value;
+            await chrome.storage.local.set({ targetLanguage: newLang });
+            showView("main");
+            runSummarizeFlow(false);
+        });
+    }
+    runSummarizeFlow(true);
+});

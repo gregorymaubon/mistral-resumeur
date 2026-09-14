@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Résumé – Mistral",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Résume en francais le texte sélectionné dans la page, via l'API de Mistral.",
   "permissions": [ "activeTab", "scripting", "clipboardWrite", "storage" ],
   "action": {
