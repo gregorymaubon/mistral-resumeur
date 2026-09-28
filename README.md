@@ -2,7 +2,7 @@
 
 Extension **personnelle** qui :
 - lit le **texte sélectionné** dans l’onglet actif,
-- demande à **Mistral** un **résumé en un seul paragraphe en français** (le prompt est modifiable),
+- demande à **Mistral** un **résumé en un seul paragraphe en français ou en anglais** (le prompt est modifiable),
 - l’affiche dans le **popup** avec un bouton **Copier**,
 - affiche la **consommation de tokens** (prompt, complétion, total) du résumé,
 - gère un **historique** trié par date de création décroissante avec rappel des tokens consommés.
