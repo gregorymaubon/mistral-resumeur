@@ -2,6 +2,23 @@
 
 Toutes les modifications notables apportées à ce projet seront documentées dans ce fichier.
 
+## [1.4.0] - 2026-10-06
+
+### Ajouts
+- **Saisie interactive de la clé API Mistral** : L'utilisateur peut désormais saisir sa clé API Mistral directement depuis l'interface du popup, sans modifier manuellement le fichier `config.js`.
+- **Vérification automatique au lancement** : L'extension vérifie la présence d'une clé API stockée (`chrome.storage.local` ou `config.js`) dès son ouverture et affiche une fenêtre modale d'invitation si aucune clé n'est configurée.
+- **Gestion intelligente des erreurs d'authentification** : En cas d'erreur de clé API (expiration, clé invalide, erreur HTTP 401/403), la fenêtre de saisie s'ouvre automatiquement pour proposer à l'utilisateur de vérifier et de remplacer sa clé.
+- **Bouton de paramètres dans le header** : Ajout d'une icône engrenage (⚙️) dans la barre supérieure pour consulter et modifier la clé API à tout moment.
+
+### Améliorations
+- **Stockage sécurisé local** : La clé API est désormais enregistrée dans le stockage local du navigateur (`chrome.storage.local`).
+- **Masquage / Affichage de la clé** : Bouton d'œil permettant d'afficher ou de masquer les caractères de la clé API lors de la saisie.
+
+---
+
+## [1.3.1] - 2026-09-29
+- **corrections mineurs**
+
 ## [1.3.0] - 2026-09-14
 
 ### Ajouts

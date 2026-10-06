@@ -21,15 +21,38 @@ const historyList = $("historyList");
 const statusEl = $("status");
 const langSelectEl = $("langSelect");
 
+// Éléments DOM Modal Clé API & Paramètres
+const apiKeyModal = $("apiKeyModal");
+const apiKeyInput = $("apiKeyInput");
+const apiKeyError = $("apiKeyError");
+const saveApiKeyBtn = $("saveApiKey");
+const closeApiKeyModalBtn = $("closeApiKeyModal");
+const toggleApiKeyVisibilityBtn = $("toggleApiKeyVisibility");
+const openSettingsBtn = $("openSettings");
+
 // ---- Lecture de la configuration globale (injectée par config.js) -----------
 const CFG = (window && window.MISTRAL_CONFIG) || {};
-const API_KEY = CFG.API_KEY;
 const MODEL = CFG.MODEL || "mistral-small-3.1";
 const TEMPERATURE = typeof CFG.TEMPERATURE === "number" ? CFG.TEMPERATURE : 0.3;
 const PROMPT_TEMPLATE_FR = CFG.PROMPT_TEMPLATE_FR || CFG.PROMPT_TEMPLATE || "__TEXT__";
 const PROMPT_TEMPLATE_EN = CFG.PROMPT_TEMPLATE_EN || CFG.PROMPT_TEMPLATE || "__TEXT__";
 const MAX_CHARS = Number(CFG.MAX_CHARS || 0);
 const API_URL = CFG.API_URL || "https://api.mistral.ai/v1/chat/completions";
+
+/**
+ * Récupère la clé API Mistral (en priorité depuis chrome.storage.local, sinon depuis config.js).
+ */
+async function getEffectiveApiKey() {
+    const res = await chrome.storage.local.get("mistralApiKey");
+    if (res.mistralApiKey && res.mistralApiKey.trim() !== "") {
+        return res.mistralApiKey.trim();
+    }
+    const defaultKey = CFG.API_KEY;
+    if (defaultKey && defaultKey !== "VOTRE_CLE_API_MISTRAL_ICI" && defaultKey.trim() !== "") {
+        return defaultKey.trim();
+    }
+    return "";
+}
 
 /**
  * Récupère la langue sélectionnée enregistrée (par défaut: "fr").
@@ -39,11 +62,71 @@ async function getTargetLanguage() {
     return res.targetLanguage || "fr";
 }
 
-// ---- Petit contrôle : clé renseignée en mode direct -------------------------
-if (!API_KEY || API_KEY.includes("VOTRE_CLE_API_MISTRAL_ICI")) {
-    document.addEventListener("DOMContentLoaded", () => {
-        statusEl.textContent = "⛔ Ajoute ta clé API dans config.js (ou active USE_PROXY) puis recharge.";
-    });
+/**
+ * Ouvre la fenêtre modal de configuration de la clé API Mistral.
+ */
+async function openApiKeyModal(errorMsg = "", allowClose = true) {
+    if (!apiKeyModal) return;
+    const currentKey = await getEffectiveApiKey();
+    if (apiKeyInput) {
+        apiKeyInput.value = currentKey;
+        apiKeyInput.type = "password";
+    }
+
+    if (apiKeyError) {
+        if (errorMsg) {
+            apiKeyError.textContent = errorMsg;
+            apiKeyError.hidden = false;
+        } else {
+            apiKeyError.hidden = true;
+        }
+    }
+
+    if (closeApiKeyModalBtn) {
+        if (allowClose && currentKey) {
+            closeApiKeyModalBtn.hidden = false;
+        } else {
+            closeApiKeyModalBtn.hidden = true;
+        }
+    }
+
+    apiKeyModal.hidden = false;
+    if (apiKeyInput) apiKeyInput.focus();
+}
+
+/**
+ * Ferme la fenêtre modal.
+ */
+function closeApiKeyModal() {
+    if (apiKeyModal) apiKeyModal.hidden = true;
+    if (apiKeyError) apiKeyError.hidden = true;
+}
+
+/**
+ * Enregistre la clé API saisie par l'utilisateur dans chrome.storage.local.
+ */
+async function saveApiKey() {
+    if (!apiKeyInput) return;
+    const key = apiKeyInput.value.trim();
+    if (!key) {
+        if (apiKeyError) {
+            apiKeyError.textContent = "Veuillez saisir une clé API Mistral valide.";
+            apiKeyError.hidden = false;
+        }
+        return;
+    }
+
+    await chrome.storage.local.set({ mistralApiKey: key });
+    closeApiKeyModal();
+    statusEl.textContent = "Clé API enregistrée ✅";
+    setTimeout(() => {
+        if (statusEl.textContent === "Clé API enregistrée ✅") {
+            statusEl.textContent = "";
+        }
+    }, 1500);
+
+    // Relancer le flux après enregistrement
+    runSummarizeFlow(false);
 }
 
 /**
@@ -95,9 +178,6 @@ function buildPromptFromTemplate(rawText, lang = "fr") {
     return template.replace("__TEXT__", sliced);
 }
 
-/**
- * Appel en mode direct vers l'API de Mistral avec support du streaming.
- */
 // ---- Affichage de la volumétrie des tokens ----------------------------------
 const usageStatsEl = $("usageStats");
 const tokenPromptEl = $("tokenPrompt");
@@ -121,6 +201,13 @@ function displayUsage(usage) {
  * Tentative d'appel vers l'API de Mistral avec support du streaming.
  */
 async function callMistralDirectAttempt(prompt, lang, onChunk, includeUsage) {
+    const apiKey = await getEffectiveApiKey();
+    if (!apiKey) {
+        const err = new Error("Clé API Mistral manquante.");
+        err.status = 401;
+        throw err;
+    }
+
     const systemContent = lang === "en"
         ? "You are a concise assistant who summarizes accurately."
         : "Tu es un assistant concis qui résume fidèlement.";
@@ -141,7 +228,7 @@ async function callMistralDirectAttempt(prompt, lang, onChunk, includeUsage) {
     const resp = await fetch(API_URL, {
         method: "POST",
         headers: {
-            "Authorization": `Bearer ${API_KEY}`,
+            "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json"
         },
         body: JSON.stringify(body)
@@ -150,7 +237,9 @@ async function callMistralDirectAttempt(prompt, lang, onChunk, includeUsage) {
     if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         const msg = data?.error?.message || JSON.stringify(data) || `HTTP ${resp.status}`;
-        throw new Error(`Mistral: ${msg} [Status: ${resp.status}]`);
+        const err = new Error(`Mistral: ${msg} [Status: ${resp.status}]`);
+        err.status = resp.status;
+        throw err;
     }
 
     const reader = resp.body.getReader();
@@ -217,10 +306,17 @@ async function callMistralDirect(prompt, lang, onChunk) {
 }
 
 /**
- * Chaîne complète : lit la sélection → construit le prompt → appelle Mistral → affiche.
+ * Chaîne complète : vérifie la clé API → lit la sélection → construit le prompt → appelle Mistral → affiche.
  */
 async function runSummarizeFlow(auto = false) {
     try {
+        const apiKey = await getEffectiveApiKey();
+        if (!apiKey) {
+            statusEl.textContent = "🔑 Clé API Mistral requise.";
+            await openApiKeyModal("Aucune clé API Mistral n'est configurée. Veuillez saisir votre clé ci-dessous.", false);
+            return;
+        }
+
         statusEl.textContent = auto ? "Lecture de la sélection…" : "Traitement…";
         outputEl.hidden = true;
         outputEl.textContent = "";
@@ -280,8 +376,15 @@ async function runSummarizeFlow(auto = false) {
             statusEl.textContent = "";
         }
     } catch (e) {
-        statusEl.textContent = e?.message || String(e);
+        const errMsg = e?.message || String(e);
+        statusEl.textContent = errMsg;
         displayUsage(null);
+
+        // Si l'erreur concerne la clé API (401, 403, Unauthorized, Key invalid...)
+        if (e?.status === 401 || e?.status === 403 || /401|403|unauthorized|invalid|key|authorization/i.test(errMsg)) {
+            statusEl.textContent = "⛔ Clé API Mistral invalide ou expirée.";
+            openApiKeyModal("La clé API Mistral semble invalide ou expirée. Veuillez la vérifier et la remplacer.", true);
+        }
     }
 }
 
@@ -403,6 +506,46 @@ $("copy").addEventListener("click", async () => {
     }
 });
 
+// Événements Modal Clé API & Paramètres
+if (openSettingsBtn) {
+    openSettingsBtn.addEventListener("click", () => openApiKeyModal("", true));
+}
+
+if (closeApiKeyModalBtn) {
+    closeApiKeyModalBtn.addEventListener("click", () => closeApiKeyModal());
+}
+
+if (saveApiKeyBtn) {
+    saveApiKeyBtn.addEventListener("click", saveApiKey);
+}
+
+if (apiKeyInput) {
+    apiKeyInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            saveApiKey();
+        }
+    });
+}
+
+if (toggleApiKeyVisibilityBtn) {
+    toggleApiKeyVisibilityBtn.addEventListener("click", () => {
+        if (apiKeyInput.type === "password") {
+            apiKeyInput.type = "text";
+        } else {
+            apiKeyInput.type = "password";
+        }
+    });
+}
+
+if (apiKeyModal) {
+    apiKeyModal.addEventListener("click", (e) => {
+        if (e.target === apiKeyModal && !closeApiKeyModalBtn.hidden) {
+            closeApiKeyModal();
+        }
+    });
+}
+
 // ---- Autostart & Initialisation de la langue -------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
     if (langSelectEl) {
@@ -416,5 +559,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             runSummarizeFlow(false);
         });
     }
-    runSummarizeFlow(true);
+
+    // Vérifier la présence de la clé API au lancement
+    const apiKey = await getEffectiveApiKey();
+    if (!apiKey) {
+        statusEl.textContent = "🔑 Clé API Mistral requise.";
+        await openApiKeyModal("Aucune clé API Mistral n'est configurée. Veuillez saisir votre clé ci-dessous.", false);
+    } else {
+        runSummarizeFlow(true);
+    }
 });
+
